@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::iter::Peekable;
 
+mod tests;
+
 #[derive(Debug, Clone, PartialEq)]
-enum Token {
+pub enum Token {
     Number(f64),
     Operator(char),
     Identifier(String),
@@ -41,7 +43,7 @@ fn is_builtin(value: &str) -> (Option<&str>, Option<f64>) {
     )
 }
 
-fn tokenize(expr: &str) -> Vec<Token> {
+pub fn tokenize(expr: &str) -> Vec<Token> {
     let is_number = |v: char| v.is_numeric() || v == '.';
     let is_unknown = |v: char| {
         !['+', '-', '*', '/', '^', ')', '(', '='].contains(&v)
@@ -87,7 +89,20 @@ fn tokenize(expr: &str) -> Vec<Token> {
                     tokens.push(Token::Number(num));
                     id_start = i + 1;
                 } else if next.is_none() || !is_unknown(next.unwrap().1.1) {
-                    tokens.push(Token::Identifier(slice_string(expr, id_start, i)));
+                    // identifiers longer than 1 character are only allowed with subscripts. Otherwise,
+                    // they are to be treated as several variables implicitly multipled together.
+                    let slice = slice_string(expr, id_start, i);
+                    let len = slice.chars().count();
+                    if slice.contains("_") || len == 1 {
+                        tokens.push(Token::Identifier(slice));
+                    } else {
+                        for (i, c) in slice.chars().enumerate() {
+                            tokens.push(Token::Identifier(c.to_string()));
+                            if i != len {
+                                tokens.push(Token::Operator('*'))
+                            }
+                        }
+                    }
                 }
             }
             _ => {}
@@ -98,8 +113,8 @@ fn tokenize(expr: &str) -> Vec<Token> {
     tokens
 }
 
-#[derive(Debug, Default)]
-enum NodeType {
+#[derive(Debug, Default, PartialEq)]
+pub enum OpType {
     #[default]
     Add,
     Sub,
@@ -109,41 +124,72 @@ enum NodeType {
     Equal,
 }
 
-#[derive(Debug, Default)]
-struct Node {
-    lhs: Option<Box<Node>>,
-    rhs: Option<Box<Node>>,
-    op: NodeType,
-    id: String,
-    value: f64,
+fn operator_precedence(op: &OpType) -> u64 {
+    match op {
+        OpType::Add | OpType::Sub => 0,
+        OpType::Mul | OpType::Div => 1,
+        OpType::Exp => 2,
+        OpType::Equal => 3,
+    }
 }
 
-fn parse_binary_expr(
+#[derive(Debug, Default, PartialEq)]
+pub enum Node {
+    #[default]
+    Placeholder,
+    Unary {
+        arg: Box<Node>,
+        op: OpType,
+    },
+    Binary {
+        lhs: Box<Node>,
+        rhs: Box<Node>,
+        op: OpType,
+    },
+    Number {
+        value: f64,
+    },
+    Identifier {
+        value: String,
+    },
+}
+
+fn parse_operation(
     c: char,
-    lhs: Node,
+    lhs: Option<Node>,
     tokens: &mut Peekable<impl Iterator<Item = Token>>,
 ) -> Result<Node, String> {
     let op = match c {
-        '+' => NodeType::Add,
-        '-' => NodeType::Sub,
-        '*' => NodeType::Mul,
-        '/' => NodeType::Div,
-        '^' => NodeType::Exp,
-        '=' => NodeType::Equal,
+        '+' => OpType::Add,
+        '-' => OpType::Sub,
+        '*' => OpType::Mul,
+        '/' => OpType::Div,
+        '^' => OpType::Exp,
+        '=' => OpType::Equal,
         _ => return Err("Uknown operator".to_string()),
     };
+    let rhs = parse_expr(tokens, 0)?;
 
-    let rhs = parse_expr(tokens)?;
-    Ok(Node {
-        lhs: Some(Box::new(lhs)),
-        rhs: Some(Box::new(rhs)),
-        op,
-        ..Default::default()
-    })
+    if let Some(node) = lhs {
+        Ok(Node::Binary {
+            lhs: Box::new(node),
+            rhs: Box::new(rhs),
+            op,
+        })
+    } else {
+        Ok(Node::Unary {
+            arg: Box::new(rhs),
+            op,
+        })
+    }
 }
 
-fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> Result<Node, String> {
+pub fn parse_expr(
+    tokens: &mut Peekable<impl Iterator<Item = Token>>,
+    current_precedence: u64,
+) -> Result<Node, String> {
     let mut node = Node::default();
+    let mut precedence = current_precedence;
 
     while let Some(token) = tokens.next() {
         if let Token::CloseParen = token {
@@ -152,22 +198,24 @@ fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> Result<Node
 
         match token {
             Token::Number(value) => {
-                node = Node {
-                    value,
-                    ..Default::default()
+                node = Node::Number { value };
+
+                // Treat as an implied multiplication
+                if matches!(
+                    tokens.peek(),
+                    Some(Token::OpenParen) | Some(Token::Identifier(_)) | Some(Token::Number(_)),
+                ) {
+                    node = parse_operation('*', Some(node), tokens)?;
                 }
             }
-            Token::Identifier(id) => {
-                node = Node {
-                    id,
-                    ..Default::default()
-                }
-            }
+            Token::Identifier(value) => node = Node::Identifier { value },
             Token::OpenParen => {
-                node = parse_expr(tokens)?;
+                // Entering another expressoin resets precedence
+                node = parse_expr(tokens, 0)?;
             }
             Token::Operator(c) => {
-                node = parse_binary_expr(c, node, tokens)?;
+                let can_be_unary = matches!(node, Node::Placeholder) && c == '-'; // TODO: handle functions as unary ops
+                node = parse_operation(c, if can_be_unary { None } else { Some(node) }, tokens)?;
             }
             _ => {}
         }
@@ -177,51 +225,14 @@ fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> Result<Node
 }
 
 fn main() {
-    let expr = "123.0 + 133. * 1 / sin(x + 1) - ln(x^2 + 3)";
-    let expr = "1 * 2 + 3 + 4";
-    let expr = "-1 + 2 * 3 + 4 / 2";
-    let expr = "4^5 + 2^(x^2 + 1)";
-    let expr = "1 + 2f(x)";
-    let expr = "1 + 2f(x)";
-    let expr = "10 - 3sin(2x) + ln(x+2) / 5";
+    //let expr = "123.0 + 133. * 1 / sin(x + 1) - ln(x^2 + 3)";
+    //let expr = "1 * 2 + 3 + 4";
+    //let expr = "-1 + 2 * 3 + 4 / 2";
+    //let expr = "4^5 + 2^(x^2 + 1)";
+    //let expr = "1 + 2f(x)";
+    //let expr = "1 + 2f(x)";
+    //let expr = "10 - 3sin(2x) + ln(x+2) / 5";
+    //let expr = "1 = (2 + x) + 3";
     //let expr = "1 = (2 = x) + 3"; // TODO: catch errors like this!
-    //let expr = "1 = (2 - x) + 3";
-
-    let mut iter = tokenize(expr).into_iter().peekable();
-    match parse_expr(&mut iter) {
-        Result::Ok(root) => {
-            dbg!(&root);
-        }
-        Result::Err(err) => println!("ERROR: {err}"),
-    };
-}
-
-mod tests {
-    use crate::Token;
-
-    #[test]
-    fn test_constants() {
-        let pi = std::f64::consts::PI;
-        let e = std::f64::consts::E;
-        assert_eq!(
-            crate::tokenize("π + e"),
-            vec![Token::Number(pi), Token::Operator('+'), Token::Number(e)]
-        );
-    }
-
-    #[test]
-    fn test_functions() {
-        let expected = vec![
-            Token::Number(10.0),
-            Token::Operator('-'),
-            Token::Number(3.0),
-            Token::Identifier(String::from("sin")),
-            Token::Identifier(String::from("x")),
-            Token::OpenParen,
-            Token::Number(2.0),
-            Token::Identifier(String::from("x")),
-            Token::CloseParen,
-        ];
-        assert_eq!(crate::tokenize("10 - 3sinx(2x)"), expected);
-    }
+    //let expr = "3xyz + 123 / 2(2)";
 }
