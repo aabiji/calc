@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::{Node, OpType, Token, parse_expr, tokenize};
+use crate::{Expr, OpType, Token, parse_expr, tokenize};
 
 #[test]
 fn test_constants() {
@@ -28,51 +28,68 @@ fn test_functions() {
 }
 
 #[test]
-fn test_ops() {
-    let expr = "-1 = (2 + x) + 3";
+fn test_parse_precedence() {
+    let expr = "4 ^ 5 * 3 + 2 ^ (-x / 2 + 1)";
     let mut tokens = tokenize(expr).into_iter().peekable();
+
     assert_eq!(
         parse_expr(&mut tokens, 0),
-        Ok(Node::Binary {
-            lhs: Box::new(Node::Unary {
-                arg: Box::new(Node::Number { value: 1.0 }),
-                op: OpType::Sub
-            }),
-            rhs: Box::new(Node::Binary {
-                lhs: Box::new(Node::Binary {
-                    lhs: Box::new(Node::Number { value: 2.0 }),
-                    rhs: Box::new(Node::Identifier {
-                        value: String::from("x")
-                    }),
-                    op: OpType::Add,
+        Ok(Expr::Binary {
+            lhs: Box::new(Expr::Binary {
+                lhs: Box::new(Expr::Binary {
+                    lhs: Box::new(Expr::Number { value: 4.0 }),
+                    rhs: Box::new(Expr::Number { value: 5.0 }),
+                    op: OpType::Exp
                 }),
-                rhs: Box::new(Node::Number { value: 3.0 }),
-                op: OpType::Add,
+                rhs: Box::new(Expr::Number { value: 3.0 }),
+                op: OpType::Mul
             }),
-            op: OpType::Equal,
+            rhs: Box::new(Expr::Binary {
+                lhs: Box::new(Expr::Number { value: 2.0 }),
+                rhs: Box::new(Expr::Binary {
+                    lhs: Box::new(Expr::Binary {
+                        lhs: Box::new(Expr::Unary {
+                            arg: Box::new(Expr::Identifier {
+                                value: String::from("x")
+                            }),
+                            op: OpType::Sub
+                        }),
+                        rhs: Box::new(Expr::Number { value: 2.0 }),
+                        op: OpType::Div
+                    }),
+                    rhs: Box::new(Expr::Number { value: 1.0 }),
+                    op: OpType::Add
+                }),
+                op: OpType::Exp
+            }),
+            op: OpType::Add
         })
     );
 }
 
 #[test]
-fn test_parse_precedence() {
-    let expr = "5 * 3 + 2 / 1";
+fn test_ops() {
+    let expr = "-1 = (2 + x) + 3";
     let mut tokens = tokenize(expr).into_iter().peekable();
-    debug_assert_eq!(
+    assert_eq!(
         parse_expr(&mut tokens, 0),
-        Ok(Node::Binary {
-            lhs: Box::new(Node::Binary {
-                lhs: Box::new(Node::Number { value: 5.0 }),
-                rhs: Box::new(Node::Number { value: 3.0 }),
-                op: OpType::Mul
+        Ok(Expr::Binary {
+            lhs: Box::new(Expr::Unary {
+                arg: Box::new(Expr::Number { value: 1.0 }),
+                op: OpType::Sub
             }),
-
-            rhs: Box::new(Node::Binary {
-                lhs: Box::new(Node::Number { value: 2.0 }),
-                rhs: Box::new(Node::Number { value: 1.0 }),
-                op: OpType::Div,
+            rhs: Box::new(Expr::Binary {
+                lhs: Box::new(Expr::Binary {
+                    lhs: Box::new(Expr::Number { value: 2.0 }),
+                    rhs: Box::new(Expr::Identifier {
+                        value: String::from("x")
+                    }),
+                    op: OpType::Add,
+                }),
+                rhs: Box::new(Expr::Number { value: 3.0 }),
+                op: OpType::Add,
             }),
-            op: OpType::Add,
+            op: OpType::Equal,
         })
     );
 }

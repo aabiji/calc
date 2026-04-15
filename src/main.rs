@@ -1,3 +1,15 @@
+/*
+- parse using precedence (for implicit operations as well)
+
+- parse functions and their arguments
+
+- handle sin notation (ex: sin 1/2x = sin(1/2x)
+
+- write and pass more tests
+
+- start thinking about evaluating the expression
+*/
+
 use std::collections::HashMap;
 use std::iter::Peekable;
 
@@ -124,26 +136,30 @@ pub enum OpType {
     Equal,
 }
 
-fn operator_precedence(op: &OpType) -> u64 {
-    match op {
-        OpType::Add | OpType::Sub => 0,
-        OpType::Mul | OpType::Div => 1,
-        OpType::Exp => 2,
-        OpType::Equal => 3,
+fn operator_info(c: &char, is_unary: bool) -> (OpType, u64) {
+    match c {
+        '+' => (OpType::Add, 0),
+        '-' if !is_unary => (OpType::Sub, 0),
+        '*' => (OpType::Mul, 1),
+        '/' => (OpType::Div, 1),
+        '^' => (OpType::Exp, 2),
+        '=' => (OpType::Equal, 3),
+        '-' if is_unary => (OpType::Sub, 4),
+        _ => (OpType::Add, 0),
     }
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub enum Node {
+pub enum Expr {
     #[default]
     Placeholder,
     Unary {
-        arg: Box<Node>,
+        arg: Box<Expr>,
         op: OpType,
     },
     Binary {
-        lhs: Box<Node>,
-        rhs: Box<Node>,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
         op: OpType,
     },
     Number {
@@ -156,28 +172,19 @@ pub enum Node {
 
 fn parse_operation(
     c: char,
-    lhs: Option<Node>,
+    lhs: Option<Expr>,
     tokens: &mut Peekable<impl Iterator<Item = Token>>,
-) -> Result<Node, String> {
-    let op = match c {
-        '+' => OpType::Add,
-        '-' => OpType::Sub,
-        '*' => OpType::Mul,
-        '/' => OpType::Div,
-        '^' => OpType::Exp,
-        '=' => OpType::Equal,
-        _ => return Err("Uknown operator".to_string()),
-    };
-    let rhs = parse_expr(tokens, 0)?;
-
+) -> Result<Expr, String> {
+    let (op, p) = operator_info(&c, lhs.is_none());
+    let rhs = parse_expr(tokens, p)?;
     if let Some(node) = lhs {
-        Ok(Node::Binary {
+        Ok(Expr::Binary {
             lhs: Box::new(node),
             rhs: Box::new(rhs),
             op,
         })
     } else {
-        Ok(Node::Unary {
+        Ok(Expr::Unary {
             arg: Box::new(rhs),
             op,
         })
@@ -186,19 +193,18 @@ fn parse_operation(
 
 pub fn parse_expr(
     tokens: &mut Peekable<impl Iterator<Item = Token>>,
-    current_precedence: u64,
-) -> Result<Node, String> {
-    let mut node = Node::default();
-    let mut precedence = current_precedence;
+    precedence: u64,
+) -> Result<Expr, String> {
+    let mut node = Expr::default();
 
     while let Some(token) = tokens.next() {
         if let Token::CloseParen = token {
-            break;
+            break; // End of a group
         }
 
         match token {
             Token::Number(value) => {
-                node = Node::Number { value };
+                node = Expr::Number { value };
 
                 // Treat as an implied multiplication
                 if matches!(
@@ -208,16 +214,26 @@ pub fn parse_expr(
                     node = parse_operation('*', Some(node), tokens)?;
                 }
             }
-            Token::Identifier(value) => node = Node::Identifier { value },
+            Token::Identifier(value) => node = Expr::Identifier { value },
             Token::OpenParen => {
                 // Entering another expressoin resets precedence
                 node = parse_expr(tokens, 0)?;
             }
             Token::Operator(c) => {
-                let can_be_unary = matches!(node, Node::Placeholder) && c == '-'; // TODO: handle functions as unary ops
+                let can_be_unary = matches!(node, Expr::Placeholder) && c == '-'; // TODO: handle functions as unary ops
                 node = parse_operation(c, if can_be_unary { None } else { Some(node) }, tokens)?;
             }
             _ => {}
+        }
+
+        if let Some(t) = tokens.peek() {
+            let p = match t {
+                Token::Operator(c) => operator_info(c, false).1,
+                _ => 0,
+            };
+            if p < precedence {
+                break; // Stop accumulating on the left hand side
+            }
         }
     }
 
@@ -228,7 +244,6 @@ fn main() {
     //let expr = "123.0 + 133. * 1 / sin(x + 1) - ln(x^2 + 3)";
     //let expr = "1 * 2 + 3 + 4";
     //let expr = "-1 + 2 * 3 + 4 / 2";
-    //let expr = "4^5 + 2^(x^2 + 1)";
     //let expr = "1 + 2f(x)";
     //let expr = "1 + 2f(x)";
     //let expr = "10 - 3sin(2x) + ln(x+2) / 5";
