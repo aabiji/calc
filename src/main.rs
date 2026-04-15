@@ -1,11 +1,6 @@
 /*
-- parse using precedence (for implicit operations as well)
-
 - parse functions and their arguments
-
-- handle sin notation (ex: sin 1/2x = sin(1/2x)
-
-- write and pass more tests
+    - handle sin notation (ex: sin 1/2x = sin(1/2x)
 
 - start thinking about evaluating the expression
 */
@@ -20,6 +15,7 @@ pub enum Token {
     Number(f64),
     Operator(char),
     Identifier(String),
+    Builtin(String),
     OpenParen,
     CloseParen,
 }
@@ -53,6 +49,30 @@ fn is_builtin(value: &str) -> (Option<&str>, Option<f64>) {
         builtin_functions.get(value).map(|_| value),
         builtin_consts.get(value).cloned(),
     )
+}
+
+fn insert_implied_tokens(tokens: &Vec<Token>) -> Vec<Token> {
+    let mut output = vec![];
+    for (i, token) in tokens.iter().enumerate() {
+        let implied_start = match token {
+            Token::Number(_) | Token::Identifier(_) | Token::CloseParen => true,
+            _ => false,
+        };
+        let invalid = matches!(token, &Token::CloseParen) || matches!(token, &Token::Builtin(_));
+        let implied_end = i + 1 < tokens.len()
+            && match tokens[i + 1] {
+                Token::Number(_) | Token::Identifier(_) | Token::Builtin(_) => true,
+                Token::OpenParen if !invalid => true,
+                _ => false,
+            };
+
+        output.push(token.clone());
+        let closing = i + 1 < tokens.len() && matches!(&tokens[i + 1], &Token::CloseParen);
+        if implied_start && implied_end && !closing {
+            output.push(Token::Operator('*'));
+        }
+    }
+    output
 }
 
 pub fn tokenize(expr: &str) -> Vec<Token> {
@@ -95,7 +115,7 @@ pub fn tokenize(expr: &str) -> Vec<Token> {
                 let (builtin_func, builtin_const) = is_builtin(&slice);
 
                 if let Some(func) = builtin_func {
-                    tokens.push(Token::Identifier(func.to_string()));
+                    tokens.push(Token::Builtin(func.to_string()));
                     id_start = i + 1;
                 } else if let Some(num) = builtin_const {
                     tokens.push(Token::Number(num));
@@ -110,7 +130,7 @@ pub fn tokenize(expr: &str) -> Vec<Token> {
                     } else {
                         for (i, c) in slice.chars().enumerate() {
                             tokens.push(Token::Identifier(c.to_string()));
-                            if i != len {
+                            if i != len - 1 {
                                 tokens.push(Token::Operator('*'))
                             }
                         }
@@ -122,7 +142,7 @@ pub fn tokenize(expr: &str) -> Vec<Token> {
         prev = Some(c);
     }
 
-    tokens
+    insert_implied_tokens(&tokens)
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -138,13 +158,13 @@ pub enum OpType {
 
 fn operator_info(c: &char, is_unary: bool) -> (OpType, u64) {
     match c {
-        '+' => (OpType::Add, 0),
-        '-' if !is_unary => (OpType::Sub, 0),
-        '*' => (OpType::Mul, 1),
-        '/' => (OpType::Div, 1),
-        '^' => (OpType::Exp, 2),
-        '=' => (OpType::Equal, 3),
-        '-' if is_unary => (OpType::Sub, 4),
+        '=' => (OpType::Equal, 0),
+        '+' => (OpType::Add, 5),
+        '-' if !is_unary => (OpType::Sub, 5),
+        '*' => (OpType::Mul, 10),
+        '/' => (OpType::Div, 10),
+        '^' => (OpType::Exp, 20),
+        '-' if is_unary => (OpType::Sub, 30),
         _ => (OpType::Add, 0),
     }
 }
@@ -153,13 +173,9 @@ fn operator_info(c: &char, is_unary: bool) -> (OpType, u64) {
 pub enum Expr {
     #[default]
     Placeholder,
-    Unary {
-        arg: Box<Expr>,
-        op: OpType,
-    },
-    Binary {
+    Operator {
         lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        rhs: Option<Box<Expr>>,
         op: OpType,
     },
     Number {
@@ -168,27 +184,11 @@ pub enum Expr {
     Identifier {
         value: String,
     },
-}
-
-fn parse_operation(
-    c: char,
-    lhs: Option<Expr>,
-    tokens: &mut Peekable<impl Iterator<Item = Token>>,
-) -> Result<Expr, String> {
-    let (op, p) = operator_info(&c, lhs.is_none());
-    let rhs = parse_expr(tokens, p)?;
-    if let Some(node) = lhs {
-        Ok(Expr::Binary {
-            lhs: Box::new(node),
-            rhs: Box::new(rhs),
-            op,
-        })
-    } else {
-        Ok(Expr::Unary {
-            arg: Box::new(rhs),
-            op,
-        })
-    }
+    Function {
+        name: String,
+        arg: Box<Expr>,
+        expr: Option<Box<Expr>>,
+    },
 }
 
 pub fn parse_expr(
@@ -203,25 +203,27 @@ pub fn parse_expr(
         }
 
         match token {
-            Token::Number(value) => {
-                node = Expr::Number { value };
-
-                // Treat as an implied multiplication
-                if matches!(
-                    tokens.peek(),
-                    Some(Token::OpenParen) | Some(Token::Identifier(_)) | Some(Token::Number(_)),
-                ) {
-                    node = parse_operation('*', Some(node), tokens)?;
-                }
-            }
+            Token::Number(value) => node = Expr::Number { value },
             Token::Identifier(value) => node = Expr::Identifier { value },
-            Token::OpenParen => {
-                // Entering another expressoin resets precedence
-                node = parse_expr(tokens, 0)?;
-            }
+            Token::Builtin(value) => node = Expr::Identifier { value }, // TODO: handle functions as unary ops
+            Token::OpenParen => node = parse_expr(tokens, 0)?,
             Token::Operator(c) => {
-                let can_be_unary = matches!(node, Expr::Placeholder) && c == '-'; // TODO: handle functions as unary ops
-                node = parse_operation(c, if can_be_unary { None } else { Some(node) }, tokens)?;
+                let can_be_unary = matches!(node, Expr::Placeholder) && c == '-';
+                let (op, p) = operator_info(&c, can_be_unary);
+
+                node = if can_be_unary {
+                    Expr::Operator {
+                        lhs: Box::new(parse_expr(tokens, p)?),
+                        rhs: None,
+                        op,
+                    }
+                } else {
+                    Expr::Operator {
+                        lhs: Box::new(node),
+                        rhs: Some(Box::new(parse_expr(tokens, p)?)),
+                        op,
+                    }
+                };
             }
             _ => {}
         }
@@ -240,14 +242,4 @@ pub fn parse_expr(
     Ok(node)
 }
 
-fn main() {
-    //let expr = "123.0 + 133. * 1 / sin(x + 1) - ln(x^2 + 3)";
-    //let expr = "1 * 2 + 3 + 4";
-    //let expr = "-1 + 2 * 3 + 4 / 2";
-    //let expr = "1 + 2f(x)";
-    //let expr = "1 + 2f(x)";
-    //let expr = "10 - 3sin(2x) + ln(x+2) / 5";
-    //let expr = "1 = (2 + x) + 3";
-    //let expr = "1 = (2 = x) + 3"; // TODO: catch errors like this!
-    //let expr = "3xyz + 123 / 2(2)";
-}
+fn main() {}
