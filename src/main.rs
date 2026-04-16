@@ -1,6 +1,17 @@
 /*
 - parse functions and their arguments
     - handle sin notation (ex: sin 1/2x = sin(1/2x)
+    NOTE: non builtin functions can only be one letter long
+     - if the token is a builtin, add a open paren, then add a closed paren just before the next operator
+
+    should we handle 'x = y = z' or only 'x = y' ???
+
+    ex: f(g(x))
+
+    f(x) should be f(x) not f * x ... we have no way of telling the difference right now
+    function vs multiplication grammar is inherently ambiguous!?
+
+    will need semantic analysis???
 
 - start thinking about evaluating the expression
 */
@@ -51,24 +62,74 @@ fn is_builtin(value: &str) -> (Option<&str>, Option<f64>) {
     )
 }
 
+// Insert Token::Operator('*') between tokens that are implicitly
+// multiplied together. Insert opening and closing parentheses around
+// argumnets that are implicitly passed into builtin functions.
 fn insert_implied_tokens(tokens: &Vec<Token>) -> Vec<Token> {
     let mut output = vec![];
+    let mut have_implied_argument = false;
+
     for (i, token) in tokens.iter().enumerate() {
-        let implied_start = match token {
-            Token::Number(_) | Token::Identifier(_) | Token::CloseParen => true,
+        let mut current = token.clone();
+        if have_implied_argument && matches!(token, &Token::Operator(_) | &Token::OpenParen) {
+            output.push(Token::CloseParen);
+            current = Token::CloseParen;
+            have_implied_argument = false;
+        }
+
+        let can_split = match &token {
+            &Token::Identifier(id) => id.len() > 1 && !id.contains("_"),
             _ => false,
         };
-        let invalid = matches!(token, &Token::CloseParen) || matches!(token, &Token::Builtin(_));
-        let implied_end = i + 1 < tokens.len()
-            && match tokens[i + 1] {
-                Token::Number(_) | Token::Identifier(_) | Token::Builtin(_) => true,
-                Token::OpenParen if !invalid => true,
-                _ => false,
-            };
 
-        output.push(token.clone());
-        let closing = i + 1 < tokens.len() && matches!(&tokens[i + 1], &Token::CloseParen);
-        if implied_start && implied_end && !closing {
+        if let Token::Identifier(id) = &token
+            && can_split
+        {
+            let chars = id.chars().enumerate();
+            let len = chars.clone().count() - 1;
+            for (i, c) in chars {
+                output.push(Token::Identifier(c.to_string()));
+                current = Token::Identifier(c.to_string());
+                if i != len {
+                    output.push(Token::Operator('*'));
+                }
+            }
+        } else {
+            if let Token::CloseParen = current
+                && tokens[i] == Token::OpenParen
+            {
+                output.push(Token::Operator('*'));
+            }
+
+            current = token.clone();
+            output.push(token.clone());
+        }
+
+        if i == tokens.len() - 1 {
+            continue;
+        }
+        let next = &tokens[i + 1];
+
+        let implied_mul1 = matches!(
+            current,
+            Token::Number(_) | Token::Identifier(_) | Token::CloseParen
+        ) && matches!(
+            next,
+            &Token::Number(_) | &Token::Identifier(_) | &Token::Builtin(_)
+        );
+
+        let implied_mul2 = matches!(current, Token::Number(_) | Token::CloseParen)
+            && matches!(next, &Token::OpenParen);
+
+        let implied_argumnet =
+            matches!(current, Token::Builtin(_)) && !matches!(next, &Token::OpenParen);
+
+        if implied_argumnet {
+            have_implied_argument = true;
+            output.push(Token::OpenParen);
+        }
+
+        if implied_mul1 || implied_mul2 {
             output.push(Token::Operator('*'));
         }
     }
@@ -121,20 +182,7 @@ pub fn tokenize(expr: &str) -> Vec<Token> {
                     tokens.push(Token::Number(num));
                     id_start = i + 1;
                 } else if next.is_none() || !is_unknown(next.unwrap().1.1) {
-                    // identifiers longer than 1 character are only allowed with subscripts. Otherwise,
-                    // they are to be treated as several variables implicitly multipled together.
-                    let slice = slice_string(expr, id_start, i);
-                    let len = slice.chars().count();
-                    if slice.contains("_") || len == 1 {
-                        tokens.push(Token::Identifier(slice));
-                    } else {
-                        for (i, c) in slice.chars().enumerate() {
-                            tokens.push(Token::Identifier(c.to_string()));
-                            if i != len - 1 {
-                                tokens.push(Token::Operator('*'))
-                            }
-                        }
-                    }
+                    tokens.push(Token::Identifier(slice_string(expr, id_start, i)));
                 }
             }
             _ => {}
