@@ -16,3 +16,7 @@ Parsing:
 - Implied parentheses and multiplications are handled using another tokenization pass
 - Identifiers longer than 1 character are only allowed with subscripts.
   Otherwise, they are to be treated as several variables implicitly multipled together.
+
+TODO:
+now start thinking about evaluating the AST
+figure out how to cleanly handle syntax errors

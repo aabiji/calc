@@ -1,21 +1,3 @@
-/*
-- parse functions and their arguments
-    - handle sin notation (ex: sin 1/2x = sin(1/2x)
-    NOTE: non builtin functions can only be one letter long
-     - if the token is a builtin, add a open paren, then add a closed paren just before the next operator
-
-    should we handle 'x = y = z' or only 'x = y' ???
-
-    ex: f(g(x))
-
-    f(x) should be f(x) not f * x ... we have no way of telling the difference right now
-    function vs multiplication grammar is inherently ambiguous!?
-
-    will need semantic analysis???
-
-- start thinking about evaluating the expression
-*/
-
 use std::collections::HashMap;
 use std::iter::Peekable;
 
@@ -64,7 +46,9 @@ fn is_builtin(value: &str) -> (Option<&str>, Option<f64>) {
 
 // Insert Token::Operator('*') between tokens that are implicitly
 // multiplied together. Insert opening and closing parentheses around
-// argumnets that are implicitly passed into builtin functions.
+// arguments that immediately follow the builtin functions. Arguments
+// are only grouped by implicit multiplication, so for instance
+// cos1/2x will be interpreted as (cos1) / 2x.
 fn insert_implied_tokens(tokens: &Vec<Token>) -> Vec<Token> {
     let mut output = vec![];
     let mut have_implied_argument = false;
@@ -235,14 +219,10 @@ pub enum Expr {
     Function {
         name: String,
         arg: Box<Expr>,
-        expr: Option<Box<Expr>>,
     },
 }
 
-pub fn parse_expr(
-    tokens: &mut Peekable<impl Iterator<Item = Token>>,
-    precedence: u64,
-) -> Result<Expr, String> {
+pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence: u64) -> Expr {
     let mut node = Expr::default();
 
     while let Some(token) = tokens.next() {
@@ -252,23 +232,40 @@ pub fn parse_expr(
 
         match token {
             Token::Number(value) => node = Expr::Number { value },
-            Token::Identifier(value) => node = Expr::Identifier { value },
-            Token::Builtin(value) => node = Expr::Identifier { value }, // TODO: handle functions as unary ops
-            Token::OpenParen => node = parse_expr(tokens, 0)?,
+            Token::OpenParen => node = parse_expr(tokens, 0),
+            Token::Identifier(value) => {
+                node = if matches!(tokens.peek(), Some(Token::OpenParen)) {
+                    tokens.next(); // Skip the Token::OpenParen
+                    Expr::Function {
+                        name: value,
+                        arg: Box::new(parse_expr(tokens, 0)),
+                    }
+                } else {
+                    Expr::Identifier { value }
+                };
+            }
+            Token::Builtin(value) => {
+                tokens.next(); // Skip the Token::OpenParen
+                node = Expr::Function {
+                    name: value,
+                    arg: Box::new(parse_expr(tokens, 0)),
+                };
+            }
             Token::Operator(c) => {
+                // Nodes accumulate on the right hand side of an operator expression
                 let can_be_unary = matches!(node, Expr::Placeholder) && c == '-';
                 let (op, p) = operator_info(&c, can_be_unary);
 
                 node = if can_be_unary {
                     Expr::Operator {
-                        lhs: Box::new(parse_expr(tokens, p)?),
+                        lhs: Box::new(parse_expr(tokens, p)),
                         rhs: None,
                         op,
                     }
                 } else {
                     Expr::Operator {
                         lhs: Box::new(node),
-                        rhs: Some(Box::new(parse_expr(tokens, p)?)),
+                        rhs: Some(Box::new(parse_expr(tokens, p))),
                         op,
                     }
                 };
@@ -282,12 +279,12 @@ pub fn parse_expr(
                 _ => 0,
             };
             if p < precedence {
-                break; // Stop accumulating on the left hand side
+                break; // Stop accumulating the node
             }
         }
     }
 
-    Ok(node)
+    node
 }
 
 fn main() {}
