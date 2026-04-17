@@ -39,7 +39,7 @@ fn parse_precedence() {
         .peekable();
 
     assert_eq!(
-        parse_expr(&mut tokens, 0),
+        dbg!(parse_expr(&mut tokens, 0)),
         Expr::Operator {
             lhs: Box::new(Expr::Operator {
                 lhs: Box::new(Expr::Operator {
@@ -87,48 +87,48 @@ fn parse_operators() {
                     lhs: Box::new(Expr::Operator {
                         lhs: Box::new(Expr::Number { value: 1.0 }),
                         rhs: None,
-                        op: OpType::Sub
+                        op: OpType::Sub,
                     }),
                     rhs: Some(Box::new(Expr::Number { value: 2.0 })),
-                    op: OpType::Mul
+                    op: OpType::Mul,
                 }),
                 rhs: Some(Box::new(Expr::Number { value: 6.0 })),
-                op: OpType::Add
+                op: OpType::Add,
             }),
             rhs: Some(Box::new(Expr::Operator {
                 lhs: Box::new(Expr::Operator {
                     lhs: Box::new(Expr::Number { value: 2.0 }),
                     rhs: Some(Box::new(Expr::Operator {
-                        lhs: Box::new(Expr::Number { value: 2.0 }),
-                        rhs: Some(Box::new(Expr::Operator {
-                            lhs: Box::new(Expr::Identifier {
-                                value: String::from("x")
-                            }),
-                            rhs: Some(Box::new(Expr::Operator {
-                                lhs: Box::new(Expr::Identifier {
-                                    value: String::from("y")
-                                }),
+                        lhs: Box::new(Expr::Operator {
+                            lhs: Box::new(Expr::Operator {
+                                lhs: Box::new(Expr::Number { value: 2.0 }),
                                 rhs: Some(Box::new(Expr::Identifier {
-                                    value: String::from("z")
+                                    value: String::from("x"),
                                 })),
-                                op: OpType::Mul
+                                op: OpType::Mul,
+                            }),
+                            rhs: Some(Box::new(Expr::Identifier {
+                                value: String::from("y"),
                             })),
-                            op: OpType::Mul
+                            op: OpType::Mul,
+                        }),
+                        rhs: Some(Box::new(Expr::Identifier {
+                            value: String::from("z"),
                         })),
-                        op: OpType::Mul
+                        op: OpType::Mul,
                     })),
                     op: OpType::Add,
                 }),
                 rhs: Some(Box::new(Expr::Operator {
-                    lhs: Box::new(Expr::Number { value: 3.0 }),
-                    rhs: Some(Box::new(Expr::Operator {
-                        lhs: Box::new(Expr::Number { value: 4.0 }),
-                        rhs: Some(Box::new(Expr::Identifier {
-                            value: String::from("x")
-                        })),
-                        op: OpType::Mul
+                    lhs: Box::new(Expr::Operator {
+                        lhs: Box::new(Expr::Number { value: 3.0 }),
+                        rhs: Some(Box::new(Expr::Number { value: 4.0 })),
+                        op: OpType::Div,
+                    }),
+                    rhs: Some(Box::new(Expr::Identifier {
+                        value: String::from("x"),
                     })),
-                    op: OpType::Div
+                    op: OpType::Mul,
                 })),
                 op: OpType::Add,
             })),
@@ -141,7 +141,7 @@ fn parse_operators() {
 fn parse_functions() {
     let mut tokens = tokenize("f(x) + 1 = y").into_iter().peekable();
     assert_eq!(
-        parse_expr(&mut tokens, 0),
+        dbg!(parse_expr(&mut tokens, 0)),
         Expr::Operator {
             lhs: Box::new(Expr::Operator {
                 lhs: Box::new(Expr::Function {
@@ -162,7 +162,7 @@ fn parse_functions() {
 
     let mut tokens = tokenize("f(g(x)) = h(x) = a(x)").into_iter().peekable();
     assert_eq!(
-        parse_expr(&mut tokens, 0),
+        dbg!(parse_expr(&mut tokens, 0)),
         Expr::Operator {
             lhs: Box::new(Expr::Function {
                 name: String::from("f"),

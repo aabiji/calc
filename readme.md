@@ -17,6 +17,10 @@ Parsing:
 - Identifiers longer than 1 character are only allowed with subscripts.
   Otherwise, they are to be treated as several variables implicitly multipled together.
 
+- http://www.holoborodko.com/pavel/numerical-methods/numerical-integration/
+- https://research.ncl.ac.uk/game/mastersdegree/gametechnologies/previousinformation/physics2numericalintegrationmethods/2017%20Tutorial%202%20-%20Numerical%20Integration%20Methods.pdf
+- https://www-sop.inria.fr/cafe/Manuel.Bronstein/publications/issac98.pdf
+
 TODO:
 now start thinking about evaluating the AST
 figure out how to cleanly handle syntax errors

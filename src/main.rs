@@ -33,6 +33,7 @@ fn is_builtin(value: &str) -> (Option<&str>, Option<f64>) {
         ("sec", 0),
         ("cot", 0),
         ("ln", 0),
+        ("log", 0),
     ]);
 
     let builtin_consts: HashMap<&str, f64> =
@@ -185,19 +186,22 @@ pub enum OpType {
     Mul,
     Div,
     Exp,
+    Factorial,
     Equal,
 }
 
-fn operator_info(c: &char, is_unary: bool) -> (OpType, u64) {
+// Returns (OpType, precedence, is_right_associative)
+fn operator_info(c: &char, is_unary: bool) -> (OpType, u64, bool) {
     match c {
-        '=' => (OpType::Equal, 0),
-        '+' => (OpType::Add, 5),
-        '-' if !is_unary => (OpType::Sub, 5),
-        '*' => (OpType::Mul, 10),
-        '/' => (OpType::Div, 10),
-        '^' => (OpType::Exp, 20),
-        '-' if is_unary => (OpType::Sub, 30),
-        _ => (OpType::Add, 0),
+        '=' => (OpType::Equal, 1, true),
+        '+' => (OpType::Add, 2, false),
+        '-' if !is_unary => (OpType::Sub, 2, false),
+        '-' if is_unary => (OpType::Sub, 4, true),
+        '*' => (OpType::Mul, 3, false),
+        '/' => (OpType::Div, 3, false),
+        '^' => (OpType::Exp, 5, true),
+        '!' => (OpType::Factorial, 4, true),
+        _ => (OpType::Add, 0, false),
     }
 }
 
@@ -222,14 +226,13 @@ pub enum Expr {
     },
 }
 
+// Have no idea why there's a bug, so I have the option of rewriting the parser.
+// -> parse_single will parse the base tokens like num, identifier, etc.
+// -> parse_expr will parse operators only if the next operator's precedence is >= the current one
 pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence: u64) -> Expr {
     let mut node = Expr::default();
 
     while let Some(token) = tokens.next() {
-        if let Token::CloseParen = token {
-            break; // End of a group
-        }
-
         match token {
             Token::Number(value) => node = Expr::Number { value },
             Token::OpenParen => node = parse_expr(tokens, 0),
@@ -254,7 +257,8 @@ pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence
             Token::Operator(c) => {
                 // Nodes accumulate on the right hand side of an operator expression
                 let can_be_unary = matches!(node, Expr::Placeholder) && c == '-';
-                let (op, p) = operator_info(&c, can_be_unary);
+                let (op, p, right_associative) = operator_info(&c, can_be_unary);
+                let p = if right_associative { p - 1 } else { p };
 
                 node = if can_be_unary {
                     Expr::Operator {
@@ -276,9 +280,13 @@ pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence
         if let Some(t) = tokens.peek() {
             let p = match t {
                 Token::Operator(c) => operator_info(c, false).1,
+                Token::CloseParen => {
+                    tokens.next(); // Skip the closing ')'
+                    0
+                },
                 _ => 0,
             };
-            if p < precedence {
+            if p <= precedence {
                 break; // Stop accumulating the node
             }
         }
