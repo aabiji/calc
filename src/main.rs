@@ -124,7 +124,7 @@ fn insert_implied_tokens(tokens: &Vec<Token>) -> Vec<Token> {
 pub fn tokenize(expr: &str) -> Vec<Token> {
     let is_number = |v: char| v.is_numeric() || v == '.';
     let is_unknown = |v: char| {
-        !['+', '-', '*', '/', '^', ')', '(', '='].contains(&v)
+        !['+', '-', '*', '/', '^', '!', ')', '(', '='].contains(&v)
             && !is_number(v)
             && !v.is_whitespace()
     };
@@ -138,7 +138,7 @@ pub fn tokenize(expr: &str) -> Vec<Token> {
         match c {
             '(' => tokens.push(Token::OpenParen),
             ')' => tokens.push(Token::CloseParen),
-            '+' | '-' | '*' | '/' | '^' | '=' => tokens.push(Token::Operator(c)),
+            '+' | '-' | '*' | '/' | '^' | '=' | '!' => tokens.push(Token::Operator(c)),
             c if is_number(c) => {
                 let next = iterator.peek();
 
@@ -190,21 +190,6 @@ pub enum OpType {
     Equal,
 }
 
-// Returns (OpType, precedence, is_right_associative)
-fn operator_info(c: &char, is_unary: bool) -> (OpType, u64, bool) {
-    match c {
-        '=' => (OpType::Equal, 1, true),
-        '+' => (OpType::Add, 2, false),
-        '-' if !is_unary => (OpType::Sub, 2, false),
-        '-' if is_unary => (OpType::Sub, 4, true),
-        '*' => (OpType::Mul, 3, false),
-        '/' => (OpType::Div, 3, false),
-        '^' => (OpType::Exp, 5, true),
-        '!' => (OpType::Factorial, 4, true),
-        _ => (OpType::Add, 0, false),
-    }
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub enum Expr {
     #[default]
@@ -226,73 +211,89 @@ pub enum Expr {
     },
 }
 
-// Have no idea why there's a bug, so I have the option of rewriting the parser.
-// -> parse_single will parse the base tokens like num, identifier, etc.
-// -> parse_expr will parse operators only if the next operator's precedence is >= the current one
-pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence: u64) -> Expr {
-    let mut node = Expr::default();
+// Returns (OpType, precedence, is_right_associative)
+fn operator_precedence(token: &Option<&Token>) -> Option<(OpType, u64, bool)> {
+    match token {
+        &Some(&Token::Operator(c)) => match c {
+            '=' => Some((OpType::Equal, 1, true)),
+            '+' => Some((OpType::Add, 2, false)),
+            '-' => Some((OpType::Sub, 2, false)),
+            '*' => Some((OpType::Mul, 3, false)),
+            '/' => Some((OpType::Div, 3, false)),
+            '^' => Some((OpType::Exp, 5, true)),
+            '!' => Some((OpType::Factorial, 4, true)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
-    while let Some(token) = tokens.next() {
-        match token {
-            Token::Number(value) => node = Expr::Number { value },
-            Token::OpenParen => node = parse_expr(tokens, 0),
-            Token::Identifier(value) => {
-                node = if matches!(tokens.peek(), Some(Token::OpenParen)) {
-                    tokens.next(); // Skip the Token::OpenParen
-                    Expr::Function {
-                        name: value,
-                        arg: Box::new(parse_expr(tokens, 0)),
-                    }
-                } else {
-                    Expr::Identifier { value }
-                };
-            }
-            Token::Builtin(value) => {
-                tokens.next(); // Skip the Token::OpenParen
-                node = Expr::Function {
+fn parse_item(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
+    match tokens.next().unwrap() {
+        Token::Number(value) => Expr::Number { value },
+
+        Token::Identifier(value) => {
+            if matches!(tokens.peek(), Some(Token::OpenParen)) {
+                tokens.next(); // Consume the Token::OpenParen
+                let arg = parse_expr(tokens, 0);
+                tokens.next(); // Consume the Token::CloseParen
+                Expr::Function {
                     name: value,
-                    arg: Box::new(parse_expr(tokens, 0)),
-                };
-            }
-            Token::Operator(c) => {
-                // Nodes accumulate on the right hand side of an operator expression
-                let can_be_unary = matches!(node, Expr::Placeholder) && c == '-';
-                let (op, p, right_associative) = operator_info(&c, can_be_unary);
-                let p = if right_associative { p - 1 } else { p };
-
-                node = if can_be_unary {
-                    Expr::Operator {
-                        lhs: Box::new(parse_expr(tokens, p)),
-                        rhs: None,
-                        op,
-                    }
-                } else {
-                    Expr::Operator {
-                        lhs: Box::new(node),
-                        rhs: Some(Box::new(parse_expr(tokens, p))),
-                        op,
-                    }
-                };
-            }
-            _ => {}
-        }
-
-        if let Some(t) = tokens.peek() {
-            let p = match t {
-                Token::Operator(c) => operator_info(c, false).1,
-                Token::CloseParen => {
-                    tokens.next(); // Skip the closing ')'
-                    0
-                },
-                _ => 0,
-            };
-            if p <= precedence {
-                break; // Stop accumulating the node
+                    arg: Box::new(arg),
+                }
+            } else {
+                Expr::Identifier { value }
             }
         }
+
+        Token::Builtin(value) => {
+            tokens.next(); // Consume the Token::OpenParen
+            let arg = parse_expr(tokens, 0);
+            tokens.next(); // Consume the Token::CloseParen
+            Expr::Function {
+                name: value,
+                arg: Box::new(arg),
+            }
+        }
+
+        Token::OpenParen => {
+            let expr = parse_expr(tokens, 0);
+            tokens.next(); // Consume the Token::CloseParen
+            expr
+        },
+ 
+        Token::Operator(c) if c == '-' || c == '!' => {
+            let t = Some(&Token::Operator('!')); // Unary operators have the same precedence
+            let expr = parse_expr(tokens, operator_precedence(&t).unwrap().1);
+            Expr::Operator {
+                lhs: Box::new(expr),
+                rhs: None,
+                op: if c == '-' { OpType::Sub } else { OpType::Factorial },
+            }
+        },
+
+        _ => Expr::Placeholder,
+    }
+}
+
+pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence: u64) -> Expr {
+    let mut expr = parse_item(tokens);
+
+    while let Some((op, p, right_associative)) = operator_precedence(&tokens.peek()) {
+        if p <= precedence {
+            break;
+        }
+
+        tokens.next();
+        let rhs = parse_expr(tokens, if right_associative { p - 1 } else { p });
+        expr = Expr::Operator {
+            lhs: Box::new(expr),
+            rhs: Some(Box::new(rhs)),
+            op,
+        };
     }
 
-    node
+    expr
 }
 
 fn main() {}

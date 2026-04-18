@@ -2,7 +2,7 @@
 use crate::{Expr, OpType, Token, parse_expr, tokenize};
 
 #[test]
-fn test_constant_tokens() {
+fn tokenize_constant_tokens() {
     let pi = std::f64::consts::PI;
     let e = std::f64::consts::E;
     assert_eq!(
@@ -12,7 +12,7 @@ fn test_constant_tokens() {
 }
 
 #[test]
-fn test_function_tokens() {
+fn tokenize_function_tokens() {
     let expected = vec![
         Token::Number(10.0),
         Token::Operator('-'),
@@ -34,7 +34,7 @@ fn test_function_tokens() {
 
 #[test]
 fn parse_precedence() {
-    let mut tokens = tokenize("4 ^ 5 * 3 + 2 ^ (-x / 2 + 1)")
+    let mut tokens = tokenize("4 ^ 5 * 3 + 2 ^ (-x / 2 + !(x + 1))")
         .into_iter()
         .peekable();
 
@@ -64,7 +64,15 @@ fn parse_precedence() {
                         rhs: Some(Box::new(Expr::Number { value: 2.0 })),
                         op: OpType::Div
                     }),
-                    rhs: Some(Box::new(Expr::Number { value: 1.0 })),
+                    rhs: Some(Box::new(Expr::Operator{
+                        lhs: Box::new(Expr::Operator{
+                            lhs: Box::new(Expr::Identifier{ value: String::from("x") }),
+                            rhs: Some(Box::new(Expr::Number { value: 1.0 })),
+                            op: OpType::Add,
+                        }),
+                        rhs: None,
+                        op: OpType::Factorial
+                    })),
                     op: OpType::Add
                 })),
                 op: OpType::Exp
@@ -141,7 +149,7 @@ fn parse_operators() {
 fn parse_functions() {
     let mut tokens = tokenize("f(x) + 1 = y").into_iter().peekable();
     assert_eq!(
-        dbg!(parse_expr(&mut tokens, 0)),
+        parse_expr(&mut tokens, 0),
         Expr::Operator {
             lhs: Box::new(Expr::Operator {
                 lhs: Box::new(Expr::Function {
@@ -162,7 +170,7 @@ fn parse_functions() {
 
     let mut tokens = tokenize("f(g(x)) = h(x) = a(x)").into_iter().peekable();
     assert_eq!(
-        dbg!(parse_expr(&mut tokens, 0)),
+        parse_expr(&mut tokens, 0),
         Expr::Operator {
             lhs: Box::new(Expr::Function {
                 name: String::from("f"),
@@ -197,87 +205,130 @@ fn parse_functions() {
         .into_iter()
         .peekable();
     assert_eq!(
-        dbg!(parse_expr(&mut tokens, 0)),
+        parse_expr(&mut tokens, 0),
         Expr::Operator {
-            lhs: Box::new(Expr::Function {
-                name: String::from("f"),
-                arg: Box::new(Expr::Identifier {
-                    value: String::from("x")
-                }),
+        lhs: Box::new(Expr::Function {
+            name: String::from("f"),
+            arg: Box::new(Expr::Identifier {
+                value: String::from("x"),
             }),
-            rhs: Some(Box::new(Expr::Operator {
+        }),
+        rhs: Some(Box::new(
+            Expr::Operator {
                 lhs: Box::new(Expr::Operator {
                     lhs: Box::new(Expr::Operator {
                         lhs: Box::new(Expr::Operator {
                             lhs: Box::new(Expr::Operator {
-                                lhs: Box::new(Expr::Number { value: 5.0 }),
-                                rhs: Some(Box::new(Expr::Function {
-                                    name: String::from("ln"),
-                                    arg: Box::new(Expr::Operator {
-                                        lhs: Box::new(Expr::Number { value: e }),
-                                        rhs: Some(Box::new(Expr::Number { value: 3.0 })),
-                                        op: OpType::Add
-                                    }),
-                                })),
-                                op: OpType::Mul
-                            }),
-                            rhs: Some(Box::new(Expr::Function {
-                                name: String::from("sin"),
-                                arg: Box::new(Expr::Operator {
-                                    lhs: Box::new(Expr::Number { value: 3.0 }),
-                                    rhs: Some(Box::new(Expr::Identifier {
-                                        value: String::from("x")
-                                    })),
-                                    op: OpType::Mul
+                                lhs: Box::new(Expr::Number {
+                                    value: 5.0,
                                 }),
-                            })),
-                            op: OpType::Add
-                        }),
-                        rhs: Some(Box::new(Expr::Operator {
-                            lhs: Box::new(Expr::Function {
-                                name: String::from("cos"),
-                                arg: Box::new(Expr::Number { value: 1.0 }),
+                                rhs: Some(Box::new(
+                                    Expr::Function {
+                                        name: String::from("ln"),
+                                        arg: Box::new(Expr::Operator {
+                                            lhs: Box::new(Expr::Number {
+                                                value: e,
+                                            }),
+                                            rhs: Some(Box::new(
+                                                Expr::Number {
+                                                    value: 3.0,
+                                                },
+                                            )),
+                                            op: OpType::Add,
+                                        }),
+                                    },
+                                )),
+                                op: OpType::Mul,
                             }),
-                            rhs: Some(Box::new(Expr::Operator {
-                                lhs: Box::new(Expr::Number { value: 2.0 }),
-                                rhs: Some(Box::new(Expr::Identifier {
-                                    value: String::from("x")
-                                })),
-                                op: OpType::Mul
-                            })),
-                            op: OpType::Div
-                        })),
-                        op: OpType::Add
+                            rhs: Some(Box::new(
+                                Expr::Function {
+                                    name: String::from("sin"),
+                                    arg: Box::new(Expr::Operator {
+                                        lhs: Box::new(Expr::Number {
+                                            value: 3.0,
+                                        }),
+                                        rhs: Some(Box::new(
+                                            Expr::Identifier {
+                                                value: String::from("x"),
+                                            },
+                                        )),
+                                        op: OpType::Mul,
+                                    }),
+                                },
+                            )),
+                            op: OpType::Add,
+                        }),
+                        rhs: Some(Box::new(
+                            Expr::Operator {
+                                lhs: Box::new(Expr::Operator {
+                                    lhs: Box::new(Expr::Function {
+                                        name: String::from("cos"),
+                                        arg: Box::new(Expr::Number {
+                                            value: 1.0,
+                                        }),
+                                    }),
+                                    rhs: Some(Box::new(
+                                        Expr::Number {
+                                            value: 2.0,
+                                        },
+                                    )),
+                                    op: OpType::Div,
+                                }),
+                                rhs: Some(Box::new(
+                                    Expr::Identifier {
+                                        value: String::from("x"),
+                                    },
+                                )),
+                                op: OpType::Mul,
+                            },
+                        )),
+                        op: OpType::Add,
                     }),
-                    rhs: Some(Box::new(Expr::Function {
-                        name: String::from("cos"),
-                        arg: Box::new(Expr::Operator {
-                            lhs: Box::new(Expr::Operator {
-                                lhs: Box::new(Expr::Number { value: 1.0 }),
-                                rhs: Some(Box::new(Expr::Number { value: 2.0 })),
-                                op: OpType::Div
+                    rhs: Some(Box::new(
+                        Expr::Function {
+                            name: String::from("cos"),
+                            arg: Box::new(Expr::Operator {
+                                lhs: Box::new(Expr::Operator {
+                                    lhs: Box::new(Expr::Number {
+                                        value: 1.0,
+                                    }),
+                                    rhs: Some(Box::new(
+                                        Expr::Number {
+                                            value: 2.0,
+                                        },
+                                    )),
+                                    op: OpType::Div,
+                                }),
+                                rhs: Some(Box::new(
+                                    Expr::Identifier {
+                                        value: String::from("x"),
+                                    },
+                                )),
+                                op: OpType::Mul,
                             }),
-                            rhs: Some(Box::new(Expr::Identifier {
-                                value: String::from("x")
-                            })),
-                            op: OpType::Mul
-                        }),
-                    })),
-                    op: OpType::Add
+                        },
+                    )),
+                    op: OpType::Add,
                 }),
-                rhs: Some(Box::new(Expr::Operator {
-                    lhs: Box::new(Expr::Number { value: 2.0 }),
-                    rhs: Some(Box::new(Expr::Function {
-                        name: String::from("g"),
-                        arg: Box::new(Expr::Identifier {
-                            value: String::from("x")
+                rhs: Some(Box::new(
+                    Expr::Operator {
+                        lhs: Box::new(Expr::Number {
+                            value: 2.0,
                         }),
-                    })),
-                    op: OpType::Mul
-                })),
-                op: OpType::Add
-            })),
-            op: OpType::Equal,
-        }
-    );
+                        rhs: Some(Box::new(
+                            Expr::Function {
+                                name: String::from("g"),
+                                arg: Box::new(Expr::Identifier {
+                                    value: String::from("x"),
+                                }),
+                            },
+                        )),
+                        op: OpType::Mul,
+                    },
+                )),
+                op: OpType::Add,
+            }
+        )),
+        op: OpType::Equal,
+    });
 }
