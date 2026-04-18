@@ -260,17 +260,21 @@ fn parse_item(tokens: &mut Peekable<impl Iterator<Item = Token>>) -> Expr {
             let expr = parse_expr(tokens, 0);
             tokens.next(); // Consume the Token::CloseParen
             expr
-        },
- 
+        }
+
         Token::Operator(c) if c == '-' || c == '!' => {
             let t = Some(&Token::Operator('!')); // Unary operators have the same precedence
             let expr = parse_expr(tokens, operator_precedence(&t).unwrap().1);
             Expr::Operator {
                 lhs: Box::new(expr),
                 rhs: None,
-                op: if c == '-' { OpType::Sub } else { OpType::Factorial },
+                op: if c == '-' {
+                    OpType::Sub
+                } else {
+                    OpType::Factorial
+                },
             }
-        },
+        }
 
         _ => Expr::Placeholder,
     }
@@ -294,6 +298,37 @@ pub fn parse_expr(tokens: &mut Peekable<impl Iterator<Item = Token>>, precedence
     }
 
     expr
+}
+
+// TODO: define and evaluate functions
+pub fn eval(expr: &Expr, symbols: &HashMap<String, f64>) -> Result<f64, String> {
+    match expr {
+        Expr::Operator { lhs, rhs, op } if *op != OpType::Equal => {
+            let a = eval(lhs.as_ref(), symbols)?;
+            let b = if rhs.is_some() {
+                eval(rhs.as_ref().unwrap(), symbols)?
+            } else {
+                0.0
+            };
+
+            Ok(match op {
+                OpType::Add => a + b,
+                OpType::Sub => a - b,
+                OpType::Mul => a * b,
+                OpType::Div => a / b,
+                OpType::Exp => a.powf(b),
+                // TODO: implement the gamma function to compute factorials for the reals
+                OpType::Factorial => (1..=(a as u64)).product::<u64>() as f64,
+                _ => 0.0,
+            })
+        }
+        Expr::Identifier { value } => symbols
+            .get(value.as_str())
+            .ok_or(format!("Unknown variable {value}"))
+            .copied(),
+        Expr::Number { value } => Ok(*value),
+        _ => Ok(0.0),
+    }
 }
 
 fn main() {}
