@@ -1,5 +1,12 @@
 # Low earth orbit visualizer
 
+Post on X:
+```
+I'm back from my silence. I might come back to the chemical visualizer, but
+now I've switched projects. Now I'm working on a satellite orbit visualizer.
+After implementing pages and pages of math I can finally say that my SGP propagator is working
+```
+
 In C++ with OpenGL, everything from scratch.
 
 - Read CSV data to get satellite info
