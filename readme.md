@@ -14,6 +14,8 @@ Roadmap:
 
     - Texture a sphere using a texture of the Earth
 
+        - Level of detail: Swap out the texture based off of the zoom level
+
     - Zoom a camera in/out, orbit around the earth
 
     - Render each satellite as a dot
@@ -49,6 +51,8 @@ Roadmap:
 
 ---
 
+- [Texture mapping](https://people.computing.clemson.edu/~dhouse/courses/405/notes/texture-maps.pdf)
+- [Planet Earth Texture Mapping](https://planetpixelemporium.com/earth8081.html)
 - [Collision avoidance](https://advancedssa.com/media/CoordinateFrames-SSAworkshop2018.61f87636.pdf)
 - [Planetary Orbits](https://science.nasa.gov/learn/basics-of-space-flight/chapter5-1/)
 - [Supplemental GP Element Sets](https://celestrak.org/NORAD/elements/supplemental/index.php?FORMAT=csv)
