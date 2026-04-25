@@ -58,3 +58,17 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
 )
 target_link_libraries(${PROJECT_NAME} perturb imgui glm glfw glad stb)
+
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4          # Baseline strict warnings for MSVC
+        /WX          # Treat warnings as errors
+        /permissive- # Enable strict standard conformance mode
+    >
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:
+        -Wall        # Enable common warnings
+        -Wextra      # Enable extra useful warnings
+        -Wpedantic   # Enforce strict ISO C++ compliance
+        -Werror      # Treat warnings as errors
+    >
+)

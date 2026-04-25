@@ -1,13 +1,21 @@
 #include <assert.h>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <unordered_map>
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
+#include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+// TODO:
+// - Generate a sphere by subdividing an icosohedron
+//   https://danielsieger.com/blog/2021/03/27/generating-spheres.html
+// - Map a texture to the vertices
 
 unsigned int load_shader(const char *path, int type) {
   auto size = std::filesystem::file_size(path);
@@ -69,6 +77,127 @@ private:
   unsigned int program;
 };
 
+struct vec3hash {
+  std::size_t operator()(const glm::vec3 &v) const {
+    return std::hash<float>()(v.x) ^ (std::hash<float>()(v.y) << 1) ^
+           (std::hash<float>()(v.z) << 2);
+  }
+};
+
+struct Vertex {
+  glm::vec3 position;
+};
+
+class Mesh {
+public:
+  ~Mesh();
+  explicit Mesh(std::vector<Vertex> v, std::vector<unsigned int> i);
+  void render();
+
+private:
+  std::vector<Vertex> vertices;
+  std::vector<unsigned int> indices;
+  unsigned int vao, vbo, ebo;
+
+  void generate_buffers();
+};
+
+Mesh::Mesh(std::vector<Vertex> v, std::vector<unsigned int> i)
+    : vertices(v), indices(i) {
+  glGenVertexArrays(1, &vao);
+  glGenBuffers(1, &vbo);
+  glGenBuffers(1, &ebo);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex),
+               vertices.data(), GL_STATIC_DRAW);
+  glBindVertexArray(vao);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int),
+               indices.data(), GL_STATIC_DRAW);
+
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                        (void *)offsetof(Vertex, position));
+  glEnableVertexAttribArray(0); // position
+}
+
+Mesh::~Mesh() {
+  glDeleteVertexArrays(1, &vao);
+  glDeleteBuffers(1, &vbo);
+  glDeleteBuffers(1, &ebo);
+}
+
+void Mesh::render() {
+  glBindVertexArray(vao);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+  glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+}
+
+Mesh generate_sphere(int depth) {
+  std::vector<Vertex> vertices;
+  std::unordered_map<glm::vec3, unsigned int, vec3hash> vertex_map;
+
+  auto add_vertex = [&](glm::vec3 v) {
+    int index = vertices.size();
+    vertices.push_back(Vertex{v});
+    vertex_map.insert({v, index});
+    return index;
+  };
+
+  auto midpoint = [&](int p1, int p2) {
+    glm::vec3 v =
+        glm::normalize((vertices[p1].position + vertices[p2].position) / 2.0f);
+    return vertex_map.count(v) ? vertex_map[v] : add_vertex(v);
+  };
+
+  // Initial icosahedron points
+  double p = (1.0 + std::sqrt(5.0)) / 2.0;
+  std::vector<glm::vec3> initial_vertices = {
+      glm::vec3(-1, p, 0),  glm::vec3(1, p, 0),    glm::vec3(-1, -p, 0),
+      glm::vec3(1, -p, 0),  glm::vec3(0, -1, p),   glm::vec3(0, 1, p),
+      glm::vec3(0, -1, -p), glm::vec3(0, 1, -p),   glm::vec3(p, 0, -1),
+      glm::vec3(p, 0, 1),   glm::vec3(-p, -0, -1), glm::vec3(-p, -0, 1)};
+  for (glm::vec3 v : initial_vertices)
+    add_vertex(v);
+
+  // Each triangle is grouped by 3 indices
+  std::vector<unsigned int> indices = {
+      0, 11, 5,  0, 5,  1, 0, 1, 7, 0, 7,  10, 0, 10, 11, 1, 5, 9, 5, 11,
+      4, 11, 10, 2, 10, 7, 6, 7, 1, 8, 3,  9,  4, 3,  4,  2, 3, 2, 6, 3,
+      6, 8,  3,  8, 9,  4, 9, 5, 2, 4, 11, 6,  2, 10, 8,  6, 7, 9, 8, 1};
+
+  for (int j = 0; j < depth; j++) {
+    std::vector<unsigned int> new_indices;
+
+    for (size_t i = 0; i < indices.size(); i += 3) {
+      int a = midpoint(indices[0], indices[1]);
+      int b = midpoint(indices[1], indices[2]);
+      int c = midpoint(indices[2], indices[0]);
+
+      new_indices.push_back(indices[0]);
+      new_indices.push_back(a);
+      new_indices.push_back(c);
+
+      new_indices.push_back(indices[1]);
+      new_indices.push_back(b);
+      new_indices.push_back(a);
+
+      new_indices.push_back(indices[2]);
+      new_indices.push_back(c);
+      new_indices.push_back(b);
+
+      new_indices.push_back(a);
+      new_indices.push_back(b);
+      new_indices.push_back(c);
+    }
+
+    indices = new_indices;
+  }
+
+  return Mesh(vertices, indices);
+}
+
 int main() {
   // auto satellites = read_satellite_data("../data/starlink.csv");
 
@@ -89,38 +218,7 @@ int main() {
 
   {
     Shader shader("../src/vertex.glsl", "../src/fragment.glsl");
-
-    float vertices[] = {
-        0.5,  0.5,  0.0, 1.0, 0.0, 0.0, // top right
-        0.5,  -0.5, 0.0, 0.0, 1.0, 0.0, // bottom right
-        -0.5, -0.5, 0.0, 0.0, 0.0, 1.0, // bottom left
-        -0.5, 0.5,  0.0, 1.0, 1.0, 0.0  // top left
-    };
-    unsigned int indices[] = {
-        // note that we start from 0!
-        0, 1, 3, // first triangle
-        1, 2, 3  // second triangle
-    };
-
-    unsigned int VBO, VAO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-    glBindVertexArray(VAO);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
-                 GL_STATIC_DRAW);
-
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
-                          (void *)0);
-    glEnableVertexAttribArray(0); // position
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
-                          (void *)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1); // color
+    Mesh sphere = generate_sphere(0);
 
     while (!glfwWindowShouldClose(window)) {
       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
@@ -130,17 +228,11 @@ int main() {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
       shader.use();
-      glBindVertexArray(VAO);
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+      sphere.render();
 
       glfwSwapBuffers(window);
       glfwPollEvents();
     }
-
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteBuffers(1, &EBO);
   }
 
   glfwTerminate();
