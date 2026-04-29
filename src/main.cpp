@@ -41,7 +41,7 @@ public:
       : unit(unit), obj(obj) {
     int width = 0, height = 0, channels = 0;
     stbi_set_flip_vertically_on_load(true);
-    unsigned char *pixels = stbi_load(path, &width, &height, &channels, 4);
+    float *pixels = stbi_loadf(path, &width, &height, &channels, 4);
     if (pixels == nullptr || channels != 4)
       THROW_ERROR("Failed to load {}", path);
 
@@ -52,8 +52,7 @@ public:
     glTexParameteri(obj, GL_TEXTURE_WRAP_R, wrap);
     glTexParameteri(obj, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(obj, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(obj, 0, GL_RGB, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 pixels);
+    glTexImage2D(obj, 0, GL_RGB, width, height, 0, GL_RGBA, GL_FLOAT, pixels);
     glGenerateMipmap(obj);
     stbi_image_free(pixels);
   }
@@ -89,7 +88,7 @@ InstanceData satellite_to_model(Satellite s) {
 }
 
 int main() {
-  auto satellites = read_satellite_data("../data/starlink.csv");
+  auto satellites = read_satellite_data("../assets/starlink.csv");
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -121,7 +120,7 @@ int main() {
     Shader main_shader("../assets/shaders/main_vertex.glsl",
                        "../assets/shaders/main_fragment.glsl");
 
-    Shader cubemap_shader("../assets/shaders/fragment_vertex.glsl",
+    Shader cubemap_shader("../assets/shaders/cubemap_vertex.glsl",
                           "../assets/shaders/cubemap_fragment.glsl");
 
     Texture earth_texture("../assets/textures/earthmap4k.jpg", GL_TEXTURE_2D,

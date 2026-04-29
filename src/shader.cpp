@@ -24,7 +24,7 @@ unsigned int load_shader(const char *path, int type) {
   glGetShaderiv(id, GL_COMPILE_STATUS, &success);
   if (!success) {
     glGetShaderInfoLog(id, 1024, nullptr, info_log);
-    THROW_ERROR("Shader error: {}", info_log);
+    THROW_ERROR("{} | {}", path, info_log);
   }
 
   return id;
