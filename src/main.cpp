@@ -7,6 +7,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include "camera.h"
 #include "debug.h"
 #include "mesh.h"
 #include "satellite.h"
@@ -15,6 +16,8 @@
 /*
 Refactor checklist (the code right now is extremely messy):
 
+- Critically evaluate the codebase right now and refactor what I have at the
+moment into a structured architecture
 - merge instancedmesh and skybox?
 - don't need to store vertices + indices + instance data after they've been
 uploaded to the shader
@@ -25,37 +28,6 @@ uploaded to the shader
 mouse
 - merge the two texture constructots into one
 */
-
-class Camera {
-public:
-  explicit Camera(float aspect_ratio) {
-    projection =
-        glm::perspective((float)M_PI / 4.0f, aspect_ratio, 0.1f, 100.0f);
-    pos = glm::vec3(0.0, 0.0, 3.0);
-  }
-
-  void rotate_look_at(float dx, float dy, float sensitivity) {
-    glm::vec3 world_up = glm::vec3(0.0, 1.0, 0.0);
-    glm::vec3 world_right = current_rotation * glm::vec3(1.0, 0.0, 0.0);
-
-    glm::quat yaw = glm::angleAxis(dx * sensitivity, world_up);
-    glm::quat pitch = glm::angleAxis(dy * sensitivity, world_right);
-    current_rotation = glm::normalize(yaw * pitch * current_rotation);
-  }
-
-  glm::mat4 view_matrix() {
-    glm::vec3 front = current_rotation * glm::vec3(0.0, 0.0, -1.0);
-    glm::vec3 up = current_rotation * glm::vec3(0.0, 1.0, 0.0);
-    return glm::lookAt(pos, pos + front, up);
-  }
-
-  glm::mat4 projection_matrix() { return projection; }
-
-private:
-  glm::vec3 pos;
-  glm::quat current_rotation;
-  glm::mat4 projection;
-};
 
 class Texture {
 public:
@@ -131,6 +103,12 @@ InstanceData satellite_to_model(Satellite s) {
   return instance;
 }
 
+#include <iostream>
+void handle_scroll(GLFWwindow *window, double xoffset, double yoffset) {
+  (void)window;
+  std::cout << "Scrolling " << xoffset << " " << yoffset << "\n";
+}
+
 int main() {
   // auto satellites = read_satellite_data("../assets/starlink.csv");
 
@@ -149,6 +127,8 @@ int main() {
   assert(gladLoadGLLoader((GLADloadproc)glfwGetProcAddress) != 0);
   glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, true);
 
+  glfwSetScrollCallback(window, handle_scroll);
+
   glViewport(0, 0, window_width, window_height);
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_DEBUG_OUTPUT);
@@ -157,8 +137,11 @@ int main() {
   glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr,
                         GL_TRUE);
 
+  Camera camera;
   float aspect_ratio = (float)window_width / (float)window_height;
-  Camera camera(aspect_ratio);
+  glm::mat4 projection =
+      glm::perspective((float)M_PI / 4.0f, aspect_ratio, 0.1f, 100.0f);
+
   const char *filenames[] = {
       "../assets/textures/cubemap/px.png", "../assets/textures/cubemap/nx.png",
       "../assets/textures/cubemap/py.png", "../assets/textures/cubemap/ny.png",
@@ -196,33 +179,36 @@ int main() {
       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
         break;
 
-      /*
-      if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.move(-1);
+      if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        camera.move_vertically(true);
 
-      if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.move(1);
-      */
+      if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        camera.move_vertically(false);
+
+      if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        camera.rotate_position(true);
+
+      if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        camera.rotate_position(false);
 
       double x, y;
       glfwGetCursorPos(window, &x, &y);
       bool mouse_down =
           glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
       if (mouse_down)
-        camera.rotate_look_at(x - prev_x, y - prev_y, 0.01);
+        camera.rotate_orientation(x - prev_x, y - prev_y, 0.001);
       prev_x = x;
       prev_y = y;
 
       glClearColor(0.0, 0.0, 0.0, 1.0);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-      glm::mat4 p = camera.projection_matrix();
       glm::mat4 v = camera.view_matrix();
       glm::mat4 v_no_translation = glm::mat4(glm::mat3(v));
 
       // Render the scene
       main_shader.use();
-      main_shader.set<glm::mat4>("projection", p);
+      main_shader.set<glm::mat4>("projection", projection);
       main_shader.set<glm::mat4>("view", v);
 
       earth_texture.use();
@@ -236,7 +222,7 @@ int main() {
 
       // Render the skybox
       cubemap_shader.use();
-      cubemap_shader.set<glm::mat4>("projection", p);
+      cubemap_shader.set<glm::mat4>("projection", projection);
       cubemap_shader.set<glm::mat4>("view", v_no_translation);
       glDepthFunc(GL_LEQUAL);
       cubemap_texture.use();

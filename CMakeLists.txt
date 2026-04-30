@@ -55,6 +55,7 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME}
+    src/camera.cpp
     src/debug.cpp
     src/main.cpp
     src/mesh.cpp
