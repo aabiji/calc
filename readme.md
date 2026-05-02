@@ -2,35 +2,18 @@
 
 Inspiration: https://orbital-watch-pink.vercel.app/
 
-Roadmap:
-- Use the [sgp4](https://github.com/neuromorphicsystems/sgp4/) crate to propagate orbital data
-
-    - Scale the propagation to thousands of satellites in 60 fps
-        - Maybe compute every n seconds and simply interpolate the positions?
-
-- Visualizer using WebGPU:
-
-    - Basic space skybox
-
-    - [x] Texture a sphere using a texture of the Earth
-
-        - Level of detail: Swap out the texture based off of the zoom level
-
-    - Zoom a camera in/out, orbit around the earth
-
-    - Render each satellite as a dot
-        - Instanced rendering of circles and spheres
-        - Don't render satellites that are behind the sphere
-
-    - Trace the trajectories of the satellites using a curved line
-
-- Basic UI using EGUI:
-
-    - Filter satellites
-        - Select specific satellites to track
-
-    - Add a button to zoom in on your GPS position and highlight the satellites overhead the specific region
-
+- Add basic phong lighting on the gloe
+  - Use the normal map and the specular map textures
+- Render each satellite as a dot:
+  - Map SGP4 TEME coordinates to ISTR coordinates, then to InstanceData
+- Decide whether to use the daymap or the nightmap based off of the simulated time (current user time?)
+- Propagate satellites on a seperate thread
+- Click on a satellite to show info on it
+- Trace satellite trajectories using a curved line
+- Basic UI using imgui:
+  - List of all the satellites (name, type, description)
+  - Filter satellites by type, by producer, etc
+- Zoom in on your GPS position and highlight the swarm of satellites that are overhead
 - Port to WASM, release project
 
 ---

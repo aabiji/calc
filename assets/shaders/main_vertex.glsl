@@ -9,7 +9,8 @@ uniform mat4 projection;
 
 out vec2 texture_coords;
 out vec3 normal;
-out vec4 color;
+out vec4 obj_color;
+out vec3 obj_position;
 
 struct InstanceData {
     mat4 model_matrix;
@@ -23,7 +24,8 @@ layout(binding = 0, std430) readonly buffer b {
 void main() {
     mat4 m = data[gl_InstanceID].model_matrix;
     gl_Position = projection * view * m * vec4(in_pos, 1.0);
-    color = data[gl_InstanceID].color;
+    obj_position = vec3(m * vec4(in_pos, 1.0));
+    obj_color = data[gl_InstanceID].color;
     texture_coords = in_uv;
     normal = in_normal;
 }

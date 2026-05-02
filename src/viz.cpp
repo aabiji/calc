@@ -135,8 +135,8 @@ void Visualizer::run() {
     // clang-format off
     if (state.keys.contains(GLFW_KEY_W)) camera.move_vertically(true);
     if (state.keys.contains(GLFW_KEY_S)) camera.move_vertically(false);
-    if (state.keys.contains(GLFW_KEY_A)) camera.rotate_position(true);
-    if (state.keys.contains(GLFW_KEY_D)) camera.rotate_position(false);
+    if (state.keys.contains(GLFW_KEY_A)) camera.rotate_position(false);
+    if (state.keys.contains(GLFW_KEY_D)) camera.rotate_position(true);
     if (state.mouse_pressed) camera.rotate_orientation(state.cursor_delta, 0.001);
     if (state.yscroll != 0) camera.zoom(state.yscroll < 0);
     // clang-format on
